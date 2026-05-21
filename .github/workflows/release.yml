@@ -1,0 +1,195 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to release from (branch, tag, or commit SHA)"
+        required: false
+        default: "master"
+      bump:
+        description: "Version part to bump"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+      publish_npm:
+        description: "Publish package to npm"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve ref and default branch
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --all --prune
+
+          DEFAULT_BRANCH="$(git symbolic-ref --short refs/remotes/origin/HEAD | sed 's|^origin/||')"
+
+          INPUT_REF="${{ inputs.ref }}"
+          if [[ -z "$INPUT_REF" ]]; then
+            INPUT_REF="$DEFAULT_BRANCH"
+          fi
+
+          # Backward-friendly fallback if user kept the default "master" but repo uses "main".
+          if [[ "$INPUT_REF" == "master" ]] && ! git show-ref --verify --quiet "refs/remotes/origin/master"; then
+            if git show-ref --verify --quiet "refs/remotes/origin/main"; then
+              INPUT_REF="main"
+            fi
+          fi
+
+          if git show-ref --verify --quiet "refs/remotes/origin/$INPUT_REF"; then
+            RELEASE_SHA="$(git rev-parse "origin/$INPUT_REF")"
+          else
+            RELEASE_SHA="$(git rev-parse "$INPUT_REF")"
+          fi
+
+          # Require release ref to be on top of default branch history.
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" "origin/$DEFAULT_BRANCH"; then
+            echo "Ref '$INPUT_REF' ($RELEASE_SHA) is not contained in origin/$DEFAULT_BRANCH" >&2
+            exit 1
+          fi
+
+          echo "default_branch=$DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+
+          echo "Resolved ref '$INPUT_REF' -> sha '$RELEASE_SHA' on default branch '$DEFAULT_BRANCH'"
+
+      - name: Create release branch from target SHA
+        id: relbranch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SHORT_SHA="$(echo "${{ steps.resolve.outputs.release_sha }}" | cut -c1-8)"
+          RELEASE_BRANCH="release/${SHORT_SHA}-${{ github.run_number }}"
+
+          git checkout --detach "${{ steps.resolve.outputs.release_sha }}"
+          git checkout -b "$RELEASE_BRANCH"
+
+          echo "release_branch=$RELEASE_BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Bump version
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CURRENT_VERSION="$(node -p "require('./package.json').version")"
+          npm version "${{ inputs.bump }}" --no-git-tag-version
+          NEW_VERSION="$(node -p "require('./package.json').version")"
+          TAG="v$NEW_VERSION"
+
+          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add package.json
+          if [[ -f package-lock.json ]]; then
+            git add package-lock.json
+          fi
+
+          if git diff --cached --quiet; then
+            echo "No version changes to commit." >&2
+            exit 1
+          fi
+
+          git commit -m "chore(release): v${{ steps.bump.outputs.new_version }}"
+          git push origin "HEAD:${{ steps.relbranch.outputs.release_branch }}"
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.bump.outputs.tag }}"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists locally." >&2
+            exit 1
+          fi
+
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists on origin." >&2
+            exit 1
+          fi
+
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.bump.outputs.tag }}
+          target_commitish: ${{ steps.relbranch.outputs.release_branch }}
+          generate_release_notes: true
+
+      - name: Open PR back to default branch
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PR_URL=$(gh pr create \
+            --base "${{ steps.resolve.outputs.default_branch }}" \
+            --head "${{ steps.relbranch.outputs.release_branch }}" \
+            --title "chore(release): v${{ steps.bump.outputs.new_version }}" \
+            --body "Automated release branch back-merge for v${{ steps.bump.outputs.new_version }}.")
+
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+          # Best-effort: enable auto-merge so the branch lands after required checks pass.
+          gh pr merge "$PR_URL" --auto --squash || true
+
+      - name: Publish to npm
+        if: ${{ inputs.publish_npm }}
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
