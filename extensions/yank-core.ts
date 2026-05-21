@@ -55,14 +55,43 @@ export function extractAssistantText(content: unknown): string {
     .trim();
 }
 
+export type CodeBlockOption = {
+  language?: string;
+  code: string;
+};
+
 type CopyDeps = {
   renderMarkdownToText: (markdown: string) => string;
   copyToClipboard: (text: string) => Promise<void>;
   notify: (message: string, level?: NotifyLevel) => void;
+  pickCodeSection?: (
+    fullText: string,
+    codeBlocks: CodeBlockOption[],
+  ) => Promise<string | undefined>;
 };
 
 function getAssistantEntries(entries: SessionEntry[]): SessionEntry[] {
   return entries.filter((entry) => entry.type === "message" && entry.message?.role === "assistant");
+}
+
+function extractFencedCodeBlocks(markdown: string): CodeBlockOption[] {
+  const blocks: CodeBlockOption[] = [];
+  const regex = /```([^\n`]*)\n([\s\S]*?)```/g;
+
+  for (const match of markdown.matchAll(regex)) {
+    const languageRaw = match[1]?.trim();
+    const code = (match[2] ?? "").replace(/\n$/, "");
+    if (!code.trim()) {
+      continue;
+    }
+
+    blocks.push({
+      language: languageRaw.length > 0 ? languageRaw : undefined,
+      code,
+    });
+  }
+
+  return blocks;
 }
 
 function getCopyableAssistantMessages(entries: SessionEntry[]): Array<{ entry: SessionEntry; text: string }> {
@@ -101,7 +130,20 @@ export async function handleExtendedCopy(
   const selected = copyableMessages[copyableMessages.length - index];
   const rawMarkdown = selected.text;
 
-  const output = plain ? deps.renderMarkdownToText(rawMarkdown) : rawMarkdown;
+  let rawOutput = rawMarkdown;
+  if (!plain && deps.pickCodeSection) {
+    const codeBlocks = extractFencedCodeBlocks(rawMarkdown);
+    if (codeBlocks.length >= 2) {
+      const picked = await deps.pickCodeSection(rawMarkdown, codeBlocks);
+      if (picked === undefined) {
+        deps.notify("Copy cancelled", "info");
+        return;
+      }
+      rawOutput = picked;
+    }
+  }
+
+  const output = plain ? deps.renderMarkdownToText(rawMarkdown) : rawOutput;
 
   try {
     await deps.copyToClipboard(output);
