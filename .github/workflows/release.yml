@@ -188,8 +188,6 @@ jobs:
           # Best-effort: enable auto-merge so the branch lands after required checks pass.
           gh pr merge "$PR_URL" --auto --squash || true
 
-      - name: Publish to npm
+      - name: Publish to npm (Trusted Publishing)
         if: ${{ inputs.publish_npm }}
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
