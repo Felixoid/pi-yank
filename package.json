@@ -1,0 +1,43 @@
+{
+  "name": "@felixoid/py-yank",
+  "version": "0.1.0",
+  "description": "Pi agent copy command: enhanced /y (yank/copy) for indexed and rendered assistant message clipboard copy",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-agent",
+    "copy",
+    "copy-command",
+    "yank",
+    "clipboard",
+    "markdown"
+  ],
+  "files": [
+    "extensions/",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/yank.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "strip-ansi": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.34",
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.8"
+  }
+}
