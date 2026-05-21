@@ -2,6 +2,12 @@
 
 Enhanced `/y` yank (copy) command for [pi coding agent](https://github.com/earendil-works/pi).
 
+## Why `/y`
+
+`/copy` is a built-in interactive command in pi, and command-name overlap with extensions is currently awkward. See the current state and discussion in [earendil-works/pi#3601](https://github.com/earendil-works/pi/issues/3601).
+
+This package uses a vim-style `/y` to avoid that collision while still adding copy-oriented features: indexed message copy, optional markdown rendering (`--plain`), code-block picker for multi-block responses, and per-session picker reset.
+
 ## Features
 
 - `/y` — same as `/y 1` (raw markdown by default)
