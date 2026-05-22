@@ -2,14 +2,23 @@
 
 Enhanced `/y` yank (copy) command for [pi coding agent](https://github.com/earendil-works/pi).
 
+## Why `/y`
+
+`/copy` is a built-in interactive command in pi, and command-name overlap with extensions is currently awkward. See the current state and discussion in [earendil-works/pi#3601](https://github.com/earendil-works/pi/issues/3601).
+
+This package uses a vim-style `/y` to avoid that collision while still adding copy-oriented features: indexed message copy, optional markdown rendering (`--plain`), code-block picker for multi-block responses, and per-session picker reset.
+
 ## Features
 
-- `/y` — yank (copy) last assistant message as rendered plain text
+- `/y` — same as `/y 1` (raw markdown by default)
 - `/y 2` — copy 2nd-to-last assistant message as raw markdown
 - `/y --plain` — copy last assistant message as rendered plain text
 - `/y 2 --plain` — indexed rendered plain-text copy
+- `/y --reset` — reset the session option that always copies full response
 
-For extended forms, default mode copies raw markdown. `--plain` uses **pi TUI Markdown renderer** (`@earendil-works/pi-tui`) and strips ANSI, so copied text keeps structure (tables, lists, code blocks) in plain text.
+For default/indexed forms, raw markdown is copied unless `--plain` is passed. If the selected response contains multiple fenced code blocks, `/y` and `/y N` show an interactive picker so you can copy either the full response or one code block.
+
+`--plain` uses **pi TUI Markdown renderer** (`@earendil-works/pi-tui`) and strips ANSI, so copied text keeps structure (tables, lists, code blocks) in plain text. The interactive picker is skipped in `--plain` mode.
 
 ## Install
 

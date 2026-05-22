@@ -132,4 +132,83 @@ describe("handleExtendedCopy", () => {
 
     expect(copied[0]).toBe("from entries");
   });
+
+  it("uses interactive picker for non-plain mode when multiple code blocks exist", async () => {
+    const copied: string[] = [];
+    const branch: SessionEntry[] = [
+      {
+        type: "message",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "```python\nprint('a')\n```\n\n```rust\nfn main() {}\n```",
+            },
+          ],
+        },
+      },
+    ];
+
+    await handleExtendedCopy("1", branch, branch, {
+      renderMarkdownToText: (md) => md,
+      copyToClipboard: async (text) => {
+        copied.push(text);
+      },
+      notify: vi.fn(),
+      pickCodeSection: async (_full, blocks) => blocks[1].code,
+    });
+
+    expect(copied[0]).toBe("fn main() {}");
+  });
+
+  it("skips picker in --plain mode", async () => {
+    const copied: string[] = [];
+    const pickCodeSection = vi.fn(async () => "unexpected");
+    const branch: SessionEntry[] = [
+      {
+        type: "message",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "```python\nprint('a')\n```\n\n```rust\nfn main() {}\n```" }],
+        },
+      },
+    ];
+
+    await handleExtendedCopy("1 --plain", branch, branch, {
+      renderMarkdownToText: (md) => `RENDERED:${md}`,
+      copyToClipboard: async (text) => {
+        copied.push(text);
+      },
+      notify: vi.fn(),
+      pickCodeSection,
+    });
+
+    expect(pickCodeSection).not.toHaveBeenCalled();
+    expect(copied[0].startsWith("RENDERED:")).toBe(true);
+  });
+
+  it("cancels copy when picker is dismissed", async () => {
+    const copyToClipboard = vi.fn(async () => undefined);
+    const notify = vi.fn();
+    const branch: SessionEntry[] = [
+      {
+        type: "message",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "```python\nprint('a')\n```\n\n```rust\nfn main() {}\n```" }],
+        },
+      },
+    ];
+
+    await handleExtendedCopy("1", branch, branch, {
+      renderMarkdownToText: (md) => md,
+      copyToClipboard,
+      notify,
+      pickCodeSection: async () => undefined,
+    });
+
+    expect(copyToClipboard).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith("Copy cancelled", "info");
+  });
 });
