@@ -13,14 +13,14 @@ export type SessionEntry = {
 
 export type NotifyLevel = "info" | "warning" | "error";
 
-export function parseCopyArgs(raw: string | undefined): { index: number; plain: boolean } {
+export function parseCopyArgs(raw: string | undefined): { index: number; render: boolean } {
   const tokens = (raw ?? "").trim().split(/\s+/).filter(Boolean);
   let index = 1;
-  let plain = false;
+  let render = false;
 
   for (const token of tokens) {
-    if (token === "--plain") {
-      plain = true;
+    if (token === "--render" || token === "-r") {
+      render = true;
       continue;
     }
 
@@ -29,7 +29,7 @@ export function parseCopyArgs(raw: string | undefined): { index: number; plain: 
     }
   }
 
-  return { index, plain };
+  return { index, render };
 }
 
 export function extractAssistantText(content: unknown): string {
@@ -106,7 +106,7 @@ export async function handleExtendedCopy(
   allEntries: SessionEntry[],
   deps: CopyDeps,
 ): Promise<void> {
-  const { index, plain } = parseCopyArgs(argsRaw);
+  const { index, render } = parseCopyArgs(argsRaw);
 
   // Prefer current branch; fall back to all entries for resumed sessions where branch can be sparse.
   let copyableMessages = getCopyableAssistantMessages(branch);
@@ -131,7 +131,7 @@ export async function handleExtendedCopy(
   const rawMarkdown = selected.text;
 
   let rawOutput = rawMarkdown;
-  if (!plain && deps.pickCodeSection) {
+  if (!render && deps.pickCodeSection) {
     const codeBlocks = extractFencedCodeBlocks(rawMarkdown);
     if (codeBlocks.length > 0) {
       const picked = await deps.pickCodeSection(rawMarkdown, codeBlocks);
@@ -143,7 +143,7 @@ export async function handleExtendedCopy(
     }
   }
 
-  const output = plain ? deps.renderMarkdownToText(rawMarkdown) : rawOutput;
+  const output = render ? deps.renderMarkdownToText(rawMarkdown) : rawOutput;
 
   try {
     await deps.copyToClipboard(output);
@@ -153,7 +153,7 @@ export async function handleExtendedCopy(
     return;
   }
 
-  const mode = plain ? "rendered text" : "raw markdown";
+  const mode = render ? "rendered text" : "raw markdown";
   const label = index === 1 ? "last" : `#${index} from last`;
   deps.notify(`Copied ${label} assistant message (${mode}, ${output.length} chars)`, "info");
 }

@@ -32,7 +32,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("y", {
     description:
-      "Yank (copy) assistant message to clipboard. Usage: /y [N] [--plain] [--reset] (/y behaves like /y 1)",
+      "Yank (copy) assistant message to clipboard. Usage: /y [N] [--render|-r] [--reset] (/y behaves like /y 1)",
     handler: async (args, ctx) => {
       const notify = (message: string, level: NotifyLevel = "info") => {
         if (ctx.hasUI) {

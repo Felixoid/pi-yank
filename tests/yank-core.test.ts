@@ -8,13 +8,14 @@ import {
 } from "../extensions/yank-core.js";
 
 describe("parseCopyArgs", () => {
-  it("parses index and plain flag", () => {
-    expect(parseCopyArgs("")).toEqual({ index: 1, plain: false });
-    expect(parseCopyArgs("2")).toEqual({ index: 2, plain: false });
-    expect(parseCopyArgs("--plain")).toEqual({ index: 1, plain: true });
-    expect(parseCopyArgs("2 --plain")).toEqual({ index: 2, plain: true });
-    expect(parseCopyArgs("--plain 3")).toEqual({ index: 3, plain: true });
-    expect(parseCopyArgs("0 --plain")).toEqual({ index: 1, plain: true });
+  it("parses index and render flags", () => {
+    expect(parseCopyArgs("")).toEqual({ index: 1, render: false });
+    expect(parseCopyArgs("2")).toEqual({ index: 2, render: false });
+    expect(parseCopyArgs("--render")).toEqual({ index: 1, render: true });
+    expect(parseCopyArgs("-r")).toEqual({ index: 1, render: true });
+    expect(parseCopyArgs("2 --render")).toEqual({ index: 2, render: true });
+    expect(parseCopyArgs("-r 3")).toEqual({ index: 3, render: true });
+    expect(parseCopyArgs("0 --render")).toEqual({ index: 1, render: true });
   });
 });
 
@@ -72,10 +73,10 @@ describe("handleExtendedCopy", () => {
     expect(notices[0]?.level).toBe("info");
   });
 
-  it("copies rendered text in --plain mode", async () => {
+  it("copies rendered text in --render mode", async () => {
     const copied: string[] = [];
 
-    await handleExtendedCopy("2 --plain", mkBranch(), mkBranch(), {
+    await handleExtendedCopy("2 --render", mkBranch(), mkBranch(), {
       renderMarkdownToText: vi.fn((md: string) => `RENDERED:${md}`),
       copyToClipboard: async (text) => {
         copied.push(text);
@@ -133,19 +134,14 @@ describe("handleExtendedCopy", () => {
     expect(copied[0]).toBe("from entries");
   });
 
-  it("uses interactive picker for non-plain mode when multiple code blocks exist", async () => {
+  it("uses interactive picker for non-render mode when one or more code blocks exist", async () => {
     const copied: string[] = [];
     const branch: SessionEntry[] = [
       {
         type: "message",
         message: {
           role: "assistant",
-          content: [
-            {
-              type: "text",
-              text: "```python\nprint('a')\n```\n\n```rust\nfn main() {}\n```",
-            },
-          ],
+          content: [{ type: "text", text: "```python\nprint('a')\n```" }],
         },
       },
     ];
@@ -156,13 +152,13 @@ describe("handleExtendedCopy", () => {
         copied.push(text);
       },
       notify: vi.fn(),
-      pickCodeSection: async (_full, blocks) => blocks[1].code,
+      pickCodeSection: async (_full, blocks) => blocks[0].code,
     });
 
-    expect(copied[0]).toBe("fn main() {}");
+    expect(copied[0]).toBe("print('a')");
   });
 
-  it("skips picker in --plain mode", async () => {
+  it("skips picker in --render mode", async () => {
     const copied: string[] = [];
     const pickCodeSection = vi.fn(async () => "unexpected");
     const branch: SessionEntry[] = [
@@ -175,7 +171,7 @@ describe("handleExtendedCopy", () => {
       },
     ];
 
-    await handleExtendedCopy("1 --plain", branch, branch, {
+    await handleExtendedCopy("1 --render", branch, branch, {
       renderMarkdownToText: (md) => `RENDERED:${md}`,
       copyToClipboard: async (text) => {
         copied.push(text);
