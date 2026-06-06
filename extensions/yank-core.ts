@@ -133,7 +133,7 @@ export async function handleExtendedCopy(
   let rawOutput = rawMarkdown;
   if (!plain && deps.pickCodeSection) {
     const codeBlocks = extractFencedCodeBlocks(rawMarkdown);
-    if (codeBlocks.length >= 2) {
+    if (codeBlocks.length > 0) {
       const picked = await deps.pickCodeSection(rawMarkdown, codeBlocks);
       if (picked === undefined) {
         deps.notify("Copy cancelled", "info");
