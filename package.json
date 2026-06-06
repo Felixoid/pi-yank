@@ -1,6 +1,10 @@
 {
   "name": "@felixoid/py-yank",
   "version": "0.2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Felixoid/pi-yank"
+  },
   "description": "Pi agent copy command: enhanced /y (yank/copy) for indexed and rendered assistant message clipboard copy",
   "license": "MIT",
   "type": "module",
