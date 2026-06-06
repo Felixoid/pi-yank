@@ -25,6 +25,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
   id-token: write
 
 jobs:
@@ -189,5 +190,21 @@ jobs:
 
           echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
 
-          # Best-effort: enable auto-merge so the branch lands after required checks pass.
-          gh pr merge "$PR_URL" --auto --squash || true
+      - name: Trigger CI for release PR branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh workflow run ci.yml --ref "${{ steps.relbranch.outputs.release_branch }}"
+
+      - name: Enable auto-merge for release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Best-effort: merge after required checks pass.
+          gh pr merge "${{ steps.pr.outputs.pr_url }}" --auto --squash || true
