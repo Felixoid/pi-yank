@@ -93,7 +93,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org
 
@@ -142,6 +142,10 @@ jobs:
           git commit -m "chore(release): v${{ steps.bump.outputs.new_version }}"
           git push origin "HEAD:${{ steps.relbranch.outputs.release_branch }}"
 
+      - name: Publish to npm (Trusted Publishing)
+        if: ${{ inputs.publish_npm }}
+        run: npm publish --access public --provenance
+
       - name: Create and push tag
         shell: bash
         run: |
@@ -187,7 +191,3 @@ jobs:
 
           # Best-effort: enable auto-merge so the branch lands after required checks pass.
           gh pr merge "$PR_URL" --auto --squash || true
-
-      - name: Publish to npm (Trusted Publishing)
-        if: ${{ inputs.publish_npm }}
-        run: npm publish --access public --provenance
