@@ -13,14 +13,24 @@ export type SessionEntry = {
 
 export type NotifyLevel = "info" | "warning" | "error";
 
-export function parseCopyArgs(raw: string | undefined): { index: number; render: boolean } {
+export function parseCopyArgs(raw: string | undefined): {
+  index: number;
+  render: boolean;
+  pick: boolean;
+} {
   const tokens = (raw ?? "").trim().split(/\s+/).filter(Boolean);
   let index = 1;
   let render = false;
+  let pick = false;
 
   for (const token of tokens) {
     if (token === "--render" || token === "-r") {
       render = true;
+      continue;
+    }
+
+    if (token === "?") {
+      pick = true;
       continue;
     }
 
@@ -29,7 +39,7 @@ export function parseCopyArgs(raw: string | undefined): { index: number; render:
     }
   }
 
-  return { index, render };
+  return { index, render, pick };
 }
 
 export function extractAssistantText(content: unknown): string {
@@ -68,11 +78,20 @@ type CopyDeps = {
     fullText: string,
     codeBlocks: CodeBlockOption[],
   ) => Promise<string | undefined>;
+  /** Resolves to the chosen message index (1 = last), or undefined when cancelled. */
+  pickMessage?: (messages: CopyableMessage[]) => Promise<number | undefined>;
 };
 
-function getAssistantEntries(entries: SessionEntry[]): SessionEntry[] {
-  return entries.filter((entry) => entry.type === "message" && entry.message?.role === "assistant");
-}
+export type CopyableMessage = {
+  /** 1 = last assistant message, as in `/y N`. */
+  index: number;
+  /** Text of the closest preceding user message, empty when none. */
+  prompt: string;
+  text: string;
+  /** 1-based position among the replies to the same prompt. */
+  turnPos: number;
+  turnSize: number;
+};
 
 function extractFencedCodeBlocks(markdown: string): CodeBlockOption[] {
   const blocks: CodeBlockOption[] = [];
@@ -94,10 +113,64 @@ function extractFencedCodeBlocks(markdown: string): CodeBlockOption[] {
   return blocks;
 }
 
-function getCopyableAssistantMessages(entries: SessionEntry[]): Array<{ entry: SessionEntry; text: string }> {
-  return getAssistantEntries(entries)
-    .map((entry) => ({ entry, text: extractAssistantText(entry.message?.content) }))
-    .filter((item) => item.text.length > 0);
+type CollectedMessage = { prompt: string; text: string; turn: number };
+
+function collectMessages(entries: SessionEntry[]): CollectedMessage[] {
+  const result: CollectedMessage[] = [];
+  let prompt = "";
+  let turn = 0;
+
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    const role = entry.message?.role;
+    if (role === "user") {
+      prompt = extractAssistantText(entry.message?.content);
+      turn += 1;
+    } else if (role === "assistant") {
+      const text = extractAssistantText(entry.message?.content);
+      if (text.length > 0) result.push({ prompt, text, turn });
+    }
+  }
+
+  return result;
+}
+
+/** Copyable assistant messages, oldest first. Falls back to all entries when the branch is sparse (resumed sessions). */
+export function listCopyableMessages(
+  branch: SessionEntry[],
+  allEntries: SessionEntry[],
+): CopyableMessage[] {
+  let messages = collectMessages(branch);
+  if (messages.length === 0) {
+    messages = collectMessages(allEntries);
+  }
+  const turnSizes = new Map<number, number>();
+  for (const m of messages) {
+    turnSizes.set(m.turn, (turnSizes.get(m.turn) ?? 0) + 1);
+  }
+
+  const seen = new Map<number, number>();
+  return messages.map(({ prompt, text, turn }, i) => {
+    const turnPos = (seen.get(turn) ?? 0) + 1;
+    seen.set(turn, turnPos);
+    return {
+      index: messages.length - i,
+      prompt,
+      text,
+      turnPos,
+      turnSize: turnSizes.get(turn) ?? 1,
+    };
+  });
+}
+
+/** Case-insensitive match where every whitespace-separated term must occur in the prompt or reply. */
+export function filterMessages(messages: CopyableMessage[], query: string): CopyableMessage[] {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return messages;
+  return messages.filter((m) => {
+    const haystack = `${m.prompt}\n${m.text}`.toLowerCase();
+    return terms.every((term) => haystack.includes(term));
+  });
 }
 
 export async function handleExtendedCopy(
@@ -106,17 +179,28 @@ export async function handleExtendedCopy(
   allEntries: SessionEntry[],
   deps: CopyDeps,
 ): Promise<void> {
-  const { index, render } = parseCopyArgs(argsRaw);
+  const parsed = parseCopyArgs(argsRaw);
+  const { render } = parsed;
+  let { index } = parsed;
 
-  // Prefer current branch; fall back to all entries for resumed sessions where branch can be sparse.
-  let copyableMessages = getCopyableAssistantMessages(branch);
-  if (copyableMessages.length === 0) {
-    copyableMessages = getCopyableAssistantMessages(allEntries);
-  }
+  const copyableMessages = listCopyableMessages(branch, allEntries);
 
   if (copyableMessages.length === 0) {
     deps.notify("No assistant messages with text found in this session", "warning");
     return;
+  }
+
+  if (parsed.pick) {
+    if (!deps.pickMessage) {
+      deps.notify("/y ? requires interactive mode", "warning");
+      return;
+    }
+    const picked = await deps.pickMessage([...copyableMessages].reverse());
+    if (picked === undefined) {
+      deps.notify("Copy cancelled", "info");
+      return;
+    }
+    index = picked;
   }
 
   if (index > copyableMessages.length) {
