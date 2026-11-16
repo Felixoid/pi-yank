@@ -8,6 +8,7 @@ import {
   type NotifyLevel,
   type SessionEntry,
 } from "./yank-core.js";
+import { MessagePicker } from "./yank-picker.js";
 
 type YankFlagSpec = {
   value: string;
@@ -16,6 +17,11 @@ type YankFlagSpec = {
 };
 
 const YANK_FLAGS: readonly YankFlagSpec[] = [
+  {
+    value: "?",
+    description: "Pick a message from a searchable list",
+    stripFromEffectiveArgs: false,
+  },
   {
     value: "--render",
     description: "Render markdown to plain text",
@@ -104,7 +110,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("y", {
     description:
-      "Yank (copy) assistant message to clipboard. Usage: /y [N] [--render|-r] [--reset] (/y behaves like /y 1)",
+      "Yank (copy) assistant message to clipboard. Usage: /y [N|?] [--render|-r] [--reset] (/y behaves like /y 1)",
     getArgumentCompletions: getYArgumentCompletions,
     handler: async (args, ctx) => {
       const notify = (message: string, level: NotifyLevel = "info") => {
@@ -136,6 +142,13 @@ export default function (pi: ExtensionAPI) {
           renderMarkdownToText,
           copyToClipboard,
           notify,
+          pickMessage: ctx.hasUI
+            ? (messages) =>
+                ctx.ui.custom<number | undefined>(
+                  (tui, theme, keybindings, done) =>
+                    new MessagePicker(tui, theme, keybindings, messages, done),
+                )
+            : undefined,
           pickCodeSection: async (fullText: string, codeBlocks: CodeBlockOption[]) => {
             if (alwaysCopyFullResponse || !ctx.hasUI) {
               return fullText;

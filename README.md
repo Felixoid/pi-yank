@@ -12,6 +12,7 @@ This package uses a vim-style `/y` to avoid that collision while still adding co
 
 - `/y` — same as `/y 1` (raw markdown by default)
 - `/y 2` — copy 2nd-to-last assistant message as raw markdown
+- `/y ?` — pick the message from a searchable list (type to filter by prompt or reply text)
 - `/y --plain` — copy last assistant message as rendered plain text
 - `/y 2 --plain` — indexed rendered plain-text copy
 - `/y --reset` — reset the session option that always copies full response
@@ -39,6 +40,7 @@ Inside pi:
 ```text
 /y
 /y 2
+/y ?
 /y --plain
 /y 2 --plain
 ```
