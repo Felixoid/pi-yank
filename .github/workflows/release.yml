@@ -25,7 +25,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  actions: write
   id-token: write
 
 jobs:
@@ -40,9 +39,17 @@ jobs:
 
       - name: Resolve ref and default branch
         id: resolve
+        env:
+          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+
+          # Fail before publishing: the back-merge PR needs this token.
+          if [[ -z "$RELEASE_PR_TOKEN" ]]; then
+            echo "Secret RELEASE_PR_TOKEN is not set" >&2
+            exit 1
+          fi
 
           git fetch --all --prune
 
@@ -118,9 +125,11 @@ jobs:
           NEW_VERSION="$(node -p "require('./package.json').version")"
           TAG="v$NEW_VERSION"
 
-          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
-          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          cat >> "$GITHUB_OUTPUT" <<EOF
+          current_version=$CURRENT_VERSION
+          new_version=$NEW_VERSION
+          tag=$TAG
+          EOF
 
       - name: Commit and push release branch
         shell: bash
@@ -177,7 +186,8 @@ jobs:
       - name: Open PR back to default branch
         id: pr
         env:
-          GH_TOKEN: ${{ github.token }}
+          # CI on a GITHUB_TOKEN PR waits for manual approval.
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -189,15 +199,6 @@ jobs:
             --body "Automated release branch back-merge for v${{ steps.bump.outputs.new_version }}.")
 
           echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Trigger CI for release PR branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          gh workflow run ci.yml --ref "${{ steps.relbranch.outputs.release_branch }}"
 
       - name: Enable auto-merge for release PR
         env:
